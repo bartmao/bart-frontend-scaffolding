@@ -3,18 +3,18 @@ var tsc = require('gulp-typescript');
 var browserify = require('browserify');
 var tsify = require('tsify');
 var source = require('vinyl-source-stream');
-var norequiretranspiler = require('./norequiretranspiler');
+var transpiler = require('./nomoduleloadertranspiler');
 
-gulp.task('server', function () {
-    return gulp.src('src/server/*.ts')
-        .pipe(tsc({
-            "module": "commonjs",
-            "target": "es6",
-            "noImplicitAny": false,
-            "sourceMap": false
-        }))
-        .pipe(gulp.dest("bin/server/"));
-});
+// gulp.task('server', function () {
+//     return gulp.src('src/server/*.ts')
+//         .pipe(tsc({
+//             "module": "commonjs",
+//             "target": "es6",
+//             "noImplicitAny": false,
+//             "sourceMap": false
+//         }))
+//         .pipe(gulp.dest("bin/server/"));
+// });
 
 gulp.task('browser', function () {
     var jsFolder = 'bin/browser/js/';
@@ -28,7 +28,8 @@ gulp.task('browser', function () {
             "noImplicitAny": false,
             "sourceMap": false
         }))
-        .pipe(norequiretranspiler())
+        .pipe(transpiler.buildDependencies())
+        .pipe(transpiler.transpiling())
         .pipe(gulp.dest(jsFolder));
 
     // For separate files using requirejs
@@ -60,4 +61,4 @@ gulp.task('browser', function () {
     //     .pipe(gulp.dest(jsFolder));
 });
 
-gulp.task('default', ['server', 'browser']);
+gulp.task('default', ['browser']);
