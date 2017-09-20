@@ -47,38 +47,48 @@ function usedExports(matches, statement) {
     return arr;
 }
 
+// currently not support same name module under different folders
 function buildDependencies() {
     return through2.obj(function (file, enc, cb) {
         var fp = file.history[0];
-        var fn = fp.substring(fp.lastIndexOf('/')+1, fp.lastIndexOf('.'));
+        var fn = fp.substring(fp.lastIndexOf('/') + 1, fp.lastIndexOf('.'));
         var txt = file.contents.toString();
         var firstLine = txt.substr(0, txt.indexOf('\n'));
         var dependencyNames = /define\(\[(.*?)\]/.exec(firstLine)[1]
             .split(', ')
-            .map(d=>d.substring(1, d.length - 1))
+            .map(d => d.substring(1, d.length - 1))
             .slice(2);
         // allow plain name not including path currently
-        dependencyNames = dependencyNames.map(d=>{
+        dependencyNames = dependencyNames.map(d => {
             var i = d.lastIndexOf('/');
-            if(i == -1) return d;
-            else return d.substring(i+1, d.length-1);
+            if (i == -1) return d;
+            else return d.substring(i + 1, d.length - 1);
         })
 
         var dependencyAlias = /function \((.+?)\)/.exec(firstLine)[1]
             .split(', ')
             .slice(2);
-        var moduleInfo = {fn:fn, exports:[], dependencies:[]};
-        if(dependencyNames.length > 0){
+        var moduleInfo = { fn: fn, exports: [], dependencies: [] };
+        if (dependencyNames.length > 0) {
             for (var i = 0; i < dependencyNames.length; i++) {
-                moduleInfo.dependencies.push({key:dependencyNames[i], value:dependencyAlias[i]});
+                moduleInfo.dependencies.push({ key: dependencyNames[i], value: dependencyAlias[i] });
             }
         }
         var reg = /exports\.(.*) = .*/g;
         var match = reg.exec(txt);
-        while(match != null){
+        while (match != null) {
             moduleInfo.exports.push(match[1]);
             match = reg.exec(txt);
         }
+
+        // For enums
+        var reg1 = /\(exports\.(.*) = {}\)/g;
+        var match1 = reg1.exec(txt);
+        while (match1 != null) {
+            moduleInfo.exports.push(match1[1]);
+            match1 = reg1.exec(txt);
+        }
+
         file['moduleInfo'] = moduleInfo;
 
         this.push(file);
@@ -86,38 +96,42 @@ function buildDependencies() {
     });
 }
 
-function transpiling(){
+function transpiling() {
     return through2.obj(function (file, enc, cb) {
-        if(file.moduleInfo){
+        if (file.moduleInfo) {
             var contents = file.contents.toString().trim();
             var newContent = '';
             var fn = file.moduleInfo.fn;
             var arr = contents.split('\n');
-            newContent+='(function(){\n'
-            for(var i = 1;i < arr.length - 1;++i){
-                if(i == 2) continue;
+            newContent += '(function(){\n'
+            var spaceCount = arr[1].search(/\S/);
+            newContent += new Array(spaceCount + 1).join(' ') + 'if(!window.exports) window.exports = {};\n';
+            newContent += new Array(spaceCount + 1).join(' ') + `if(!window.exports['${fn}']) window.exports['${fn}'] = {};\n`;
+            newContent += new Array(spaceCount + 1).join(' ') + `var exports = window.exports['${fn}'];\n`;
+            for (var i = 1; i < arr.length - 1; ++i) {
+                if (i == 2) continue;
                 // add definition of exports if not exist
-                if(arr[i].trim().startsWith('exports.')){
-                    var spaceCount = arr[i].indexOf('exports.');
-                    newContent+= new Array(spaceCount+1).join(' ') + 'if(!window.exports) window.exports = {};\n';
-                    newContent+= new Array(spaceCount+1).join(' ') + `if(!window.exports['${fn}']) window.exports['${fn}'] = {};\n`;
-                    arr[i] = arr[i].replace('exports.',`window.exports['${fn}'].`);
+                // noop
+                if (arr[i].trim().startsWith('exports.')) {
+                }
+                else if (arr[i].trim().search(/\(exports\.(.+)? = {}\)\);$/) > -1) {
                 }
 
                 // replace import definitions
                 var dep = file.moduleInfo.dependencies;
-                dep.forEach(d=>{
-                    var reg = new RegExp(`\\b${d.value}\\b\\.`);
+                dep.forEach(d => {
+                    var reg = new RegExp(`\\b${d.value}\\b\\.`, 'g');
                     arr[i] = arr[i].replace(reg, `window.exports['${d.key}'].`);
                 });
 
-                newContent+=arr[i] + '\n';                
+                newContent += arr[i] + '\n';
             }
-            newContent+='})();';
+            newContent += '})();\n';
+            newContent += `//# sourceURL=${fn}.js\n`;
             file.contents = Buffer.from(newContent);
 
-            console.log(contents);
-            console.log(newContent);
+            // console.log(contents);
+            // console.log(newContent);
         }
         this.push(file);
         cb();
